@@ -157,3 +157,39 @@ func TestLidarrV1AndMutators(t *testing.T) {
 		t.Fatalf("sonarr path on lidarr: %d", res.StatusCode)
 	}
 }
+
+func TestQueueHugePageDoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	fake := starrfake.New(starrfake.AppSonarr, "secret-key-not-used-for-length")
+	url := fake.Start()
+	t.Cleanup(fake.Close)
+	fake.Add(starrfake.Record{Title: "one", Status: starrfake.StatusCompleted})
+
+	req, err := http.NewRequest(http.MethodGet,
+		url+"/api/v3/queue?page=9223372036854775807&pageSize=9223372036854775807", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header.Set("X-Api-Key", "secret-key-not-used-for-length")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", res.StatusCode)
+	}
+
+	var queue starrfake.Queue
+	if err := json.NewDecoder(res.Body).Decode(&queue); err != nil {
+		t.Fatal(err)
+	}
+
+	if queue.TotalRecords != 1 || len(queue.Records) != 0 {
+		t.Fatalf("overflow page should be empty, got %+v", queue)
+	}
+}

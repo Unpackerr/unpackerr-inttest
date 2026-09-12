@@ -260,17 +260,7 @@ func (s *Server) serveQueue(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	all := s.Snapshot()
-	start := (page - 1) * pageSize
-
-	var pageRecs []Record
-
-	switch {
-	case start >= len(all):
-		pageRecs = []Record{}
-	default:
-		end := min(start+pageSize, len(all))
-		pageRecs = all[start:end]
-	}
+	pageRecs := paginate(all, page, pageSize)
 
 	writer.Header().Set("Content-Type", "application/json")
 
@@ -282,6 +272,33 @@ func (s *Server) serveQueue(writer http.ResponseWriter, request *http.Request) {
 		TotalRecords:  len(all),
 		Records:       pageRecs,
 	})
+}
+
+// paginate returns one page without overflowing (page-1)*pageSize.
+func paginate(all []Record, page, pageSize int) []Record {
+	if page < 1 {
+		page = 1
+	}
+
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
+	if page > 1 && (page-1) > len(all)/pageSize {
+		return []Record{}
+	}
+
+	start := (page - 1) * pageSize
+	if start >= len(all) {
+		return []Record{}
+	}
+
+	end := len(all)
+	if pageSize <= len(all)-start {
+		end = start + pageSize
+	}
+
+	return all[start:end]
 }
 
 func (s *Server) serveAdd(writer http.ResponseWriter, request *http.Request) {
