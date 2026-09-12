@@ -65,10 +65,11 @@ type Server struct {
 	App string
 	Key string
 
-	mu      sync.Mutex
-	nextID  int64
-	records []Record
-	http    *httptest.Server
+	mu        sync.Mutex
+	nextID    int64
+	records   []Record
+	queueGets int
+	http      *httptest.Server
 }
 
 // New returns a stopped fake. Call Start or ListenAndServe.
@@ -221,6 +222,14 @@ func (s *Server) Snapshot() []Record {
 	return out
 }
 
+// QueueGets is how many authenticated GET /api/*/queue calls have been served.
+func (s *Server) QueueGets() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.queueGets
+}
+
 func (s *Server) requireKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		got := request.Header.Get("X-Api-Key")
@@ -239,6 +248,10 @@ func (s *Server) requireKey(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) serveQueue(writer http.ResponseWriter, request *http.Request) {
+	s.mu.Lock()
+	s.queueGets++
+	s.mu.Unlock()
+
 	page, _ := strconv.Atoi(request.URL.Query().Get("page"))
 	if page < 1 {
 		page = 1

@@ -41,6 +41,24 @@ func startStarr(t *testing.T, fake *starrfake.Server, tweak func(*harness.Option
 	return harness.Start(t, opts)
 }
 
+func waitStarrPoll(t *testing.T, fake *starrfake.Server) {
+	t.Helper()
+
+	deadline := time.Now().Add(harness.ExtractTimeout)
+	for time.Now().Before(deadline) {
+		if fake.QueueGets() >= 1 {
+			// retrieveAppQueues runs checkStarrQueue after the HTTP GET returns.
+			time.Sleep(100 * time.Millisecond)
+
+			return
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatal("unpackerr never polled the fake Starr queue")
+}
+
 func assertExtractedMarker(t *testing.T, root string) {
 	t.Helper()
 
@@ -74,6 +92,7 @@ func TestStarrDownloadingNeverExtracts(t *testing.T) {
 	})
 
 	h := startStarr(t, fake, nil)
+	waitStarrPoll(t, fake)
 	h.AssertNeverQueue(t, title, harness.SkipTimeout)
 }
 
@@ -93,6 +112,7 @@ func TestStarrFlipCompletedRARImportDelete(t *testing.T) {
 	})
 
 	h := startStarr(t, fake, nil)
+	waitStarrPoll(t, fake)
 	h.AssertNeverQueue(t, title, 2*time.Second)
 
 	if !fake.Complete(rec.ID) {
@@ -237,6 +257,7 @@ func TestStarrProtocolSkip(t *testing.T) {
 	h := startStarr(t, fake, func(opts *harness.Options) {
 		opts.Starr[0].Protocols = "torrent,TorrentDownloadProtocol"
 	})
+	waitStarrPoll(t, fake)
 	h.AssertNeverQueue(t, title, harness.SkipTimeout)
 }
 

@@ -80,6 +80,10 @@ func TestQueueAuthAndPagination(t *testing.T) {
 	if len(queue.Records) != 2 || queue.Records[0].Title != "item-3" || queue.Records[1].Title != "item-4" {
 		t.Fatalf("records %+v", queue.Records)
 	}
+
+	if n := fake.QueueGets(); n != 1 {
+		t.Fatalf("authenticated queue GETs %d", n)
+	}
 }
 
 func TestLidarrV1AndMutators(t *testing.T) {
