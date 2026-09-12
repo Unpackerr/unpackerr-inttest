@@ -6,12 +6,9 @@ UNPACKERR_BIN ?= $(abspath $(UNPACKERR_DIR)/unpackerr)
 all: test-unit
 
 unpackerr:
-	@if [ -n "$$UNPACKERR_BIN" ] && [ -x "$$UNPACKERR_BIN" ]; then \
+	@if { [ -n "$$UNPACKERR_BIN" ] && [ -x "$$UNPACKERR_BIN" ]; } || [ -x "$(UNPACKERR_BIN)" ]; then \
 		exit 0; \
-	fi
-	@if [ -x "$(UNPACKERR_BIN)" ]; then \
-		exit 0; \
-	fi
+	fi; \
 	cd "$(UNPACKERR_DIR)" && go build -o unpackerr .
 
 test-unit:
