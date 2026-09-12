@@ -230,8 +230,8 @@ func TestFolderExtrasMaxDepth(t *testing.T) {
 		t.Fatal("deep.txt should be skipped at extras_max_depth=2")
 	}
 
-	if !fixtures.WalkHasBase(watch, "near.txt") && !fixtures.WalkHasBase(watch, "keep.txt") {
-		t.Fatal("expected shallow extract")
+	if !fixtures.WalkHasBase(watch, "near.txt") {
+		t.Fatal("expected near.txt from shallow/sibling.zip at extras_max_depth=2")
 	}
 }
 
