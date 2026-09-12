@@ -35,15 +35,16 @@ minute.
 
 ## Layout
 
-- `internal/starrfake` — in-memory queue, pagination, `X-Api-Key`
+- `internal/starrfake` — in-memory queue, pagination, `X-Api-Key`, four-app hub
 - `internal/fixtures` — NFO/txt + urandom payloads; rar/zip/7z at test start
 - `internal/harness` — temp dir, TOML, exec unpackerr, poll `/api/queue` and `/api/history`
 - `internal/write` — slow chunked writer for folder `start_delay`
-- `cmd/faker` — long-running fake Starr for manual runs
+- `cmd/faker` — one listener for `/sonarr` `/radarr` `/lidarr` `/readarr`
 - `test/` — `//go:build integration`
 
 ```bash
-go run ./cmd/faker -listen 127.0.0.1:8989 -app sonarr -key unpackerr-inttest-starr-key-32ch
+go run ./cmd/faker -listen 127.0.0.1:8989
+# unpackerr [[sonarr]] url = "http://127.0.0.1:8989/sonarr"  (same key, /radarr /lidarr /readarr)
 ```
 
 Do not commit binary archives. GitHub Actions installs `rar` / `p7zip-full` /
