@@ -3,6 +3,7 @@ package starrfake
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -24,8 +25,9 @@ func ValidApp(name string) bool {
 
 // Hub serves all four fake Starr queues on URL bases: /sonarr, /radarr, /lidarr, /readarr.
 type Hub struct {
-	Key  string
-	apps map[string]*Server
+	Key    string
+	Listen string // bind address; GET / includes apiKey only when this is loopback
+	apps   map[string]*Server
 }
 
 // NewHub starts four isolated in-memory queues sharing apiKey.
@@ -62,7 +64,33 @@ func (h *Hub) Handler() http.Handler {
 
 // ListenAndServe blocks on addr (cmd/faker).
 func (h *Hub) ListenAndServe(addr string) error {
+	h.Listen = addr
+
 	return http.ListenAndServe(addr, h.Handler()) //nolint:gosec
+}
+
+// publishAPIKey is true when faker is bound to loopback (127.0.0.1, ::1, localhost).
+func publishAPIKey(listen string) bool {
+	if listen == "" {
+		return false
+	}
+
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil {
+		host = listen
+	}
+
+	if host == "" {
+		return false
+	}
+
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+
+	return ip != nil && ip.IsLoopback()
 }
 
 func (h *Hub) serveIndex(writer http.ResponseWriter, request *http.Request) {
@@ -96,8 +124,11 @@ func (h *Hub) serveIndex(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	writer.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(writer).Encode(map[string]any{
-		"apps":   out,
-		"apiKey": h.Key,
-	})
+
+	body := map[string]any{"apps": out}
+	if publishAPIKey(h.Listen) {
+		body["apiKey"] = h.Key
+	}
+
+	_ = json.NewEncoder(writer).Encode(body)
 }

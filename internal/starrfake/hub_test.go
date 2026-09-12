@@ -119,3 +119,48 @@ func TestHubDebugAddPrefixed(t *testing.T) {
 		t.Fatalf("sonarr leaked %d", n)
 	}
 }
+
+func TestHubIndexAPIKeyOnlyOnLoopback(t *testing.T) {
+	t.Parallel()
+
+	hub := starrfake.NewHub("the-secret-key-value")
+	index := func() map[string]any {
+		t.Helper()
+
+		srv := httptest.NewServer(hub.Handler())
+		t.Cleanup(srv.Close)
+
+		res, err := http.Get(srv.URL + "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+
+		var body map[string]any
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+
+		return body
+	}
+
+	hub.Listen = "0.0.0.0:8989"
+	if _, ok := index()["apiKey"]; ok {
+		t.Fatal("expected no apiKey when listening on all interfaces")
+	}
+
+	hub.Listen = ":8989"
+	if _, ok := index()["apiKey"]; ok {
+		t.Fatal("expected no apiKey when listening on :port")
+	}
+
+	hub.Listen = "127.0.0.1:8989"
+	if got, _ := index()["apiKey"].(string); got != "the-secret-key-value" {
+		t.Fatalf("loopback apiKey %v", got)
+	}
+
+	hub.Listen = "[::1]:8989"
+	if got, _ := index()["apiKey"].(string); got != "the-secret-key-value" {
+		t.Fatalf("ipv6 loopback apiKey %v", got)
+	}
+}
