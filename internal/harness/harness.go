@@ -23,7 +23,8 @@ const (
 	DefaultAPIKey = "unpackerr-inttest-admin-key-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	// StarrAPIKey is a 32-character Starr key (Unpackerr requires ≥32).
 	StarrAPIKey = "unpackerr-inttest-starr-key-32ch"
-	// Password is used for encrypted-archive tests.
+	// Password is used for encrypted RAR and 7z tests. Unpackerr/xtractr cannot
+	// decrypt zip; do not expect a zip -P archive to extract.
 	Password = "hunter2"
 	// ReadyTimeout is how long Start waits for /api/system.
 	ReadyTimeout = 15 * time.Second
@@ -42,7 +43,7 @@ type Starr struct {
 	DeleteOrig  bool
 	DeleteDelay time.Duration
 	Syncthing   bool
-	Path        string
+	Path        string // toml `path`; Unpackerr copies this into `paths`
 	Timeout     time.Duration
 }
 
@@ -63,7 +64,7 @@ type Folder struct {
 
 // Options control the generated unpackerr.conf.
 type Options struct {
-	Debug       bool
+	Debug       bool // always forced on; failed tests dump unpackerr logs
 	Interval    time.Duration
 	StartDelay  time.Duration
 	DeleteDelay time.Duration
@@ -111,6 +112,7 @@ func defaultOptions(opts Options) Options {
 		opts.KeepHistory = 50
 	}
 
+	// Always on so t.Failed dumps unpackerr stdout. Options.Debug is not a caller knob.
 	opts.Debug = true
 
 	return opts
