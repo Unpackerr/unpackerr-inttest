@@ -90,6 +90,15 @@ func TestParseSize(t *testing.T) {
 	if _, err := inject.ParseSize("3g"); err == nil {
 		t.Fatal("expected 3g over cap")
 	}
+
+	got, err = inject.ParseSize("2g")
+	if err != nil || got != 2<<30 {
+		t.Fatalf("2g at cap: %d %v", got, err)
+	}
+
+	if _, err := inject.ParseSize("8589934592g"); err == nil {
+		t.Fatal("expected overflowing g suffix to fail the 2GiB cap")
+	}
 }
 
 func TestParseApps(t *testing.T) {

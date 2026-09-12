@@ -42,10 +42,9 @@ func ParseSize(raw string) (int, error) {
 		return 0, fmt.Errorf("invalid -size %q", raw)
 	}
 
-	bytes := n * mult
-	if bytes > maxPayload {
+	if n > maxPayload/mult {
 		return 0, fmt.Errorf("-size %q is larger than 2GiB", raw)
 	}
 
-	return bytes, nil
+	return n * mult, nil
 }

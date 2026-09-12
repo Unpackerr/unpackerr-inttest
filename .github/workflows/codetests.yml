@@ -12,11 +12,9 @@ jobs:
   lint-and-test:
     strategy:
       matrix:
-        os: [macos, linux]
-    name: golangci-lint
+        goos: [darwin, linux]
+    name: lint (${{ matrix.goos }})
     runs-on: ubuntu-latest
-    env:
-      GOOS: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -24,9 +22,12 @@ jobs:
           go-version-file: go.mod
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        env:
+          GOOS: ${{ matrix.goos }}
         with:
           version: v2.13
       - name: go-test
+        if: matrix.goos == 'linux'
         run: go test -race -covermode=atomic -count=1 ./internal/...
   integration:
     runs-on: ubuntu-latest
