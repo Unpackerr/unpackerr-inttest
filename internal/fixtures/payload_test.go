@@ -45,3 +45,12 @@ func TestPayloadSeeded(t *testing.T) {
 		t.Fatalf("marker %q", got)
 	}
 }
+
+func TestWalkReadBaseMissingRoot(t *testing.T) {
+	t.Parallel()
+
+	_, ok, err := fixtures.WalkReadBase(filepath.Join(t.TempDir(), "nope"), fixtures.MarkerName)
+	if err == nil || ok {
+		t.Fatal("missing root should return an error")
+	}
+}
