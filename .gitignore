@@ -1,0 +1,14 @@
+/faker
+/unpackerr
+/unpackerr-src/
+*.rar
+*.r00
+*.r01
+*.zip
+*.7z
+*.iso
+*.log
+*.DS_Store
+*~
+/dist/
+/vendor

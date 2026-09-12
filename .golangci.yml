@@ -1,0 +1,68 @@
+version: "2"
+run:
+  build-tags:
+    - integration
+linters:
+  default: all
+  disable:
+    - depguard
+    - exhaustruct
+    - exhaustruct_v5
+    - nlreturn
+    - wsl
+    - wsl_v5
+    - gomodguard
+    - forbidigo
+    - err113
+    - wrapcheck
+    - varnamelen
+    - mnd
+    - noinlineerr
+    - noctx
+    - cyclop
+    - funlen
+    - funcorder
+    - errchkjson
+    - nonamedreturns
+    - goconst
+    - gochecknoglobals
+    - ireturn
+    - paralleltest
+    - tparallel
+    - testpackage
+    - gocognit
+    - nestif
+    - inamedparam
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+          - revive
+        path: .+_test.go
+  settings:
+    gosec:
+      excludes:
+        - G101
+        - G115
+        - G122
+        - G204
+        - G301
+        - G302
+        - G304
+        - G306
+        - G703
+    errcheck:
+      exclude-functions:
+        - (*os.File).Close
+        - os.RemoveAll
+        - os.Remove
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
