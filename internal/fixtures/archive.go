@@ -312,8 +312,12 @@ func WalkReadBase(root, base string) (string, bool, error) {
 	)
 
 	walk = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d == nil || d.IsDir() {
-			return nil //nolint:nilerr
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
 		}
 
 		if d.Name() != base {
