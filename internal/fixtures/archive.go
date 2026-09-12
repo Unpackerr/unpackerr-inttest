@@ -102,7 +102,8 @@ func RAR(t *testing.T, dest, srcDir string, opts RAROptions) {
 	run(t, srcDir, "rar", args...)
 }
 
-// ZIP archives srcDir into dest.
+// ZIP archives srcDir into dest. A non-empty password is passed to zip -P for
+// fixture creation only; Unpackerr cannot extract encrypted zip (RAR/7z only).
 func ZIP(t *testing.T, dest, srcDir, password string) {
 	t.Helper()
 	Require(t, "zip")
