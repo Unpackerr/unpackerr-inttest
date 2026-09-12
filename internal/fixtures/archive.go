@@ -1,7 +1,9 @@
 package fixtures
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,32 +45,57 @@ func Require7z(t *testing.T) string {
 	return bin
 }
 
-func run(t *testing.T, dir, name string, args ...string) {
-	t.Helper()
-
+// Run executes name in dir and returns a combined stdout/stderr error.
+func Run(dir, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = os.Environ()
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, out)
+		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, out)
 	}
+
+	return nil
 }
 
-func absDest(t *testing.T, dest string) string {
-	t.Helper()
-
+// AbsDest creates dest's parent and returns an absolute path.
+func AbsDest(dest string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		t.Fatal(err)
+		return "", fmt.Errorf("mkdir dest: %w", err)
 	}
 
 	abs, err := filepath.Abs(dest)
 	if err != nil {
-		t.Fatal(err)
+		return "", fmt.Errorf("abs dest: %w", err)
 	}
 
-	return abs
+	return abs, nil
+}
+
+// CopyFile writes dest from src bytes.
+func CopyFile(src, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("mkdir copy: %w", err)
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", src, err)
+	}
+	defer in.Close()
+
+	out, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", dest, err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return fmt.Errorf("copy %s -> %s: %w", src, dest, err)
+	}
+
+	return nil
 }
 
 // RAROptions control rar CLI flags.
@@ -76,15 +103,26 @@ type RAROptions struct {
 	Password   string
 	Volume     string // e.g. "8k"
 	OldVolumes bool   // -vn → .rar/.r00 instead of .part1.rar
+	Compress   bool   // -m3 instead of store (-m0)
 }
 
-// RAR archives srcDir into dest (.rar) using store compression.
-func RAR(t *testing.T, dest, srcDir string, opts RAROptions) {
-	t.Helper()
-	Require(t, "rar")
+// WriteRAR archives srcDir into dest (.rar).
+func WriteRAR(dest, srcDir string, opts RAROptions) error {
+	if _, err := exec.LookPath("rar"); err != nil {
+		return errors.New("rar not in PATH")
+	}
 
-	dest = absDest(t, dest)
-	args := []string{"a", "-ep1", "-m0", "-y", "-inul"}
+	dest, err := AbsDest(dest)
+	if err != nil {
+		return err
+	}
+
+	level := "-m0"
+	if opts.Compress {
+		level = "-m3"
+	}
+
+	args := []string{"a", "-ep1", level, "-y", "-inul"}
 
 	if opts.Password != "" {
 		args = append(args, "-p"+opts.Password)
@@ -99,7 +137,139 @@ func RAR(t *testing.T, dest, srcDir string, opts RAROptions) {
 	}
 
 	args = append(args, dest, ".")
-	run(t, srcDir, "rar", args...)
+
+	return Run(srcDir, "rar", args...)
+}
+
+// WriteZIP archives srcDir into dest. A non-empty password is passed to zip -P
+// for fixture creation only; Unpackerr cannot extract encrypted zip (RAR/7z only).
+func WriteZIP(dest, srcDir, password string, compress bool) error {
+	if _, err := exec.LookPath("zip"); err != nil {
+		return errors.New("zip not in PATH")
+	}
+
+	dest, err := AbsDest(dest)
+	if err != nil {
+		return err
+	}
+
+	args := []string{"-r", "-q"}
+	if !compress {
+		args = append(args, "-0")
+	}
+
+	if password != "" {
+		args = append(args, "-P", password)
+	}
+
+	args = append(args, dest, ".")
+
+	return Run(srcDir, "zip", args...)
+}
+
+// WriteSevenZip archives srcDir into dest (.7z).
+func WriteSevenZip(dest, srcDir, password string, compress bool) error {
+	bin := SevenZip()
+	if bin == "" {
+		return errors.New("7z/7zz/7za not in PATH")
+	}
+
+	dest, err := AbsDest(dest)
+	if err != nil {
+		return err
+	}
+
+	level := "-mx=0"
+	if compress {
+		level = "-mx=3"
+	}
+
+	args := []string{"a", level, "-bd"}
+
+	if password != "" {
+		args = append(args, "-p"+password)
+	}
+
+	args = append(args, dest, ".")
+
+	return Run(srcDir, bin, args...)
+}
+
+// WriteNestedZIP writes an inner zip inside an outer zip (outer contains inner.zip + optional extras).
+func WriteNestedZIP(dest, innerSrc, extraSrc string, compress bool) error {
+	tmp, err := os.MkdirTemp("", "unpackerr-nestedzip-")
+	if err != nil {
+		return fmt.Errorf("temp nested zip: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	inner := filepath.Join(tmp, "inner.zip")
+	if err := WriteZIP(inner, innerSrc, "", compress); err != nil {
+		return err
+	}
+
+	outerSrc := filepath.Join(tmp, "outer")
+	if err := os.MkdirAll(outerSrc, 0o755); err != nil {
+		return fmt.Errorf("mkdir outer: %w", err)
+	}
+
+	if err := CopyFile(inner, filepath.Join(outerSrc, "inner.zip")); err != nil {
+		return err
+	}
+
+	if extraSrc != "" {
+		entries, err := os.ReadDir(extraSrc)
+		if err != nil {
+			return fmt.Errorf("read extra: %w", err)
+		}
+
+		for _, ent := range entries {
+			if ent.IsDir() {
+				continue
+			}
+
+			if err := CopyFile(filepath.Join(extraSrc, ent.Name()), filepath.Join(outerSrc, ent.Name())); err != nil {
+				return err
+			}
+		}
+	}
+
+	return WriteZIP(dest, outerSrc, "", compress)
+}
+
+// WriteRARinZIP puts a rar inside a zip.
+func WriteRARinZIP(dest, srcDir string, compress bool) error {
+	tmp, err := os.MkdirTemp("", "unpackerr-rarzip-")
+	if err != nil {
+		return fmt.Errorf("temp rarzip: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	rarPath := filepath.Join(tmp, "inner.rar")
+	if err := WriteRAR(rarPath, srcDir, RAROptions{Compress: compress}); err != nil {
+		return err
+	}
+
+	wrap := filepath.Join(tmp, "wrap")
+	if err := os.MkdirAll(wrap, 0o755); err != nil {
+		return fmt.Errorf("mkdir wrap: %w", err)
+	}
+
+	if err := CopyFile(rarPath, filepath.Join(wrap, "inner.rar")); err != nil {
+		return err
+	}
+
+	return WriteZIP(dest, wrap, "", compress)
+}
+
+// RAR archives srcDir into dest (.rar) using store compression.
+func RAR(t *testing.T, dest, srcDir string, opts RAROptions) {
+	t.Helper()
+	Require(t, "rar")
+
+	if err := WriteRAR(dest, srcDir, opts); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // ZIP archives srcDir into dest. A non-empty password is passed to zip -P for
@@ -108,31 +278,19 @@ func ZIP(t *testing.T, dest, srcDir, password string) {
 	t.Helper()
 	Require(t, "zip")
 
-	dest = absDest(t, dest)
-	args := []string{"-r", "-0", "-q"}
-
-	if password != "" {
-		args = append(args, "-P", password)
+	if err := WriteZIP(dest, srcDir, password, false); err != nil {
+		t.Fatal(err)
 	}
-
-	args = append(args, dest, ".")
-	run(t, srcDir, "zip", args...)
 }
 
 // SevenZipArchive archives srcDir into dest (.7z).
 func SevenZipArchive(t *testing.T, dest, srcDir, password string) {
 	t.Helper()
+	Require7z(t)
 
-	bin := Require7z(t)
-	dest = absDest(t, dest)
-	args := []string{"a", "-mx=0", "-bd"}
-
-	if password != "" {
-		args = append(args, "-p"+password)
+	if err := WriteSevenZip(dest, srcDir, password, false); err != nil {
+		t.Fatal(err)
 	}
-
-	args = append(args, dest, ".")
-	run(t, srcDir, bin, args...)
 }
 
 // NestedZIP writes an inner zip inside an outer zip (outer contains inner.zip + optional extras).
@@ -140,47 +298,9 @@ func NestedZIP(t *testing.T, dest, innerSrc, extraSrc string) {
 	t.Helper()
 	Require(t, "zip")
 
-	tmp := t.TempDir()
-	inner := filepath.Join(tmp, "inner.zip")
-	ZIP(t, inner, innerSrc, "")
-
-	outerSrc := filepath.Join(tmp, "outer")
-	if err := os.MkdirAll(outerSrc, 0o755); err != nil {
+	if err := WriteNestedZIP(dest, innerSrc, extraSrc, false); err != nil {
 		t.Fatal(err)
 	}
-
-	innerBytes, err := os.ReadFile(inner)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(outerSrc, "inner.zip"), innerBytes, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if extraSrc != "" {
-		entries, err := os.ReadDir(extraSrc)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, ent := range entries {
-			if ent.IsDir() {
-				continue
-			}
-
-			data, err := os.ReadFile(filepath.Join(extraSrc, ent.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.WriteFile(filepath.Join(outerSrc, ent.Name()), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-
-	ZIP(t, dest, outerSrc, "")
 }
 
 // RARinZIP puts a rar inside a zip.
@@ -188,25 +308,9 @@ func RARinZIP(t *testing.T, dest, srcDir string) {
 	t.Helper()
 	Require(t, "rar", "zip")
 
-	tmp := t.TempDir()
-	rarPath := filepath.Join(tmp, "inner.rar")
-	RAR(t, rarPath, srcDir, RAROptions{})
-
-	wrap := filepath.Join(tmp, "wrap")
-	if err := os.MkdirAll(wrap, 0o755); err != nil {
+	if err := WriteRARinZIP(dest, srcDir, false); err != nil {
 		t.Fatal(err)
 	}
-
-	data, err := os.ReadFile(rarPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(wrap, "inner.rar"), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	ZIP(t, dest, wrap, "")
 }
 
 // DummyISO writes a tiny non-ISO so extract_isos=false has something to ignore.

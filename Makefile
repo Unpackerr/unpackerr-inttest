@@ -1,7 +1,7 @@
 UNPACKERR_DIR ?= ../unpackerr
 UNPACKERR_BIN ?= $(abspath $(UNPACKERR_DIR)/unpackerr)
 
-.PHONY: all test test-unit faker unpackerr lint
+.PHONY: all test test-unit faker inject unpackerr lint
 
 all: test-unit
 
@@ -19,6 +19,9 @@ test: unpackerr
 
 faker:
 	go build -o faker ./cmd/faker
+
+inject:
+	go build -o inject ./cmd/inject
 
 lint:
 	golangci-lint run ./...
