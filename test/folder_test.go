@@ -64,7 +64,8 @@ func TestFolderSlowWriteStartDelay(t *testing.T) {
 	}()
 
 	for writing.Load() {
-		h.AssertStatusNot(t, dest, "extracted", 300*time.Millisecond)
+		assertNotExtracting(t, h, dest)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	if err := <-done; err != nil {
@@ -342,4 +343,19 @@ func copyFile(t *testing.T, src, dest string) {
 	if err := os.WriteFile(dest, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func assertNotExtracting(t *testing.T, h *harness.H, want string) {
+	t.Helper()
+
+	item, ok, err := h.FindQueue(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !ok || item.Status == "waiting" {
+		return
+	}
+
+	t.Fatalf("extract started while writing: %+v", item)
 }
