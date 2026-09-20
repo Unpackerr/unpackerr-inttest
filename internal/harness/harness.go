@@ -548,6 +548,47 @@ func (h *H) WaitHistory(t *testing.T, want, status string, timeout time.Duration
 	return HistoryRecord{}
 }
 
+// WaitLog waits until stdout/stderr contains needle.
+func (h *H) WaitLog(t *testing.T, needle string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(h.Logs(), needle) {
+			return
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timeout waiting for log %q:\n%s", needle, h.Logs())
+}
+
+// WaitQueueGone waits until a matching row is absent. Unlike AssertNeverQueue,
+// a row that is present and then dropped is success.
+func (h *H) WaitQueueGone(t *testing.T, want string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	var last QueueItem
+
+	for time.Now().Before(deadline) {
+		item, ok, err := h.FindQueue(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !ok {
+			return
+		}
+
+		last = item
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("timeout waiting for queue %q to leave; last=%+v", want, last)
+}
+
 // AssertNeverQueue waits timeout and fails if a matching row appears.
 func (h *H) AssertNeverQueue(t *testing.T, want string, timeout time.Duration) {
 	t.Helper()

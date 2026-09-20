@@ -32,10 +32,7 @@ func TestFolderPollerUsesInterval(t *testing.T) {
 		Interval:    200 * time.Millisecond,
 		DeleteAfter: 0,
 	}, nil)
-
-	if !strings.Contains(h.Logs(), "[Folder] Polling:") {
-		t.Fatalf("expected poller log, got:\n%s", h.Logs())
-	}
+	h.WaitLog(t, "[Folder] Polling:", 2*time.Second)
 
 	copyFile(t, staged, filepath.Join(watch, "show.zip"))
 	item := h.WaitQueue(t, filepath.Join(watch, "show.zip"), "extracted", harness.ExtractTimeout)
@@ -278,7 +275,8 @@ func TestFolderRemovedWatchPathNotRestored(t *testing.T) {
 
 	h.WriteConfig(t, harness.Options{})
 	h.Restart(t)
-	h.AssertNeverQueue(t, dest, harness.SkipTimeout)
+	// Restore puts the row in Map before Run() drops unwatched paths.
+	h.WaitQueueGone(t, dest, harness.SkipTimeout)
 }
 
 func TestFolderRetryPersistsWaiting(t *testing.T) {
