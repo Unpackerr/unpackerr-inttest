@@ -36,6 +36,7 @@ const (
 
 // Starr describes one fake Starr instance in the generated TOML.
 type Starr struct {
+	Key         string
 	App         string
 	URL         string
 	APIKey      string
@@ -47,11 +48,15 @@ type Starr struct {
 	Timeout     time.Duration
 }
 
-// Folder describes one [[folder]] watch path.
+// Folder describes one [folder.<key>] watch path.
 type Folder struct {
+	Key              string
 	Path             string
+	Interval         time.Duration
 	ExtractPath      string
 	ExcludePaths     []string
+	WaitExtensions   []string
+	SkipEmpty        bool
 	DisableRecursion bool
 	MaxNested        int
 	ExtrasMaxDepth   int
@@ -60,6 +65,13 @@ type Folder struct {
 	DeleteAfter      time.Duration
 	DeleteOrig       bool
 	DeleteFiles      bool
+}
+
+// Webhook describes one [webhook.<key>] destination.
+type Webhook struct {
+	Key    string
+	URL    string
+	Events []int
 }
 
 // Options control the generated unpackerr.conf.
@@ -72,9 +84,11 @@ type Options struct {
 	Progress    time.Duration
 	LogQueues   time.Duration
 	Passwords   []string
-	FolderPoll  time.Duration
 	Starr       []Starr
 	Folders     []Folder
+	Webhooks    []Webhook
+	HookIDs     map[string]string
+	HookTitles  map[string]string
 	KeepHistory uint
 	Binary      string
 }
@@ -104,10 +118,6 @@ func defaultOptions(opts Options) Options {
 		opts.LogQueues = 200 * time.Millisecond
 	}
 
-	if opts.FolderPoll == 0 {
-		opts.FolderPoll = 200 * time.Millisecond
-	}
-
 	if opts.KeepHistory == 0 {
 		opts.KeepHistory = 50
 	}
@@ -126,6 +136,7 @@ type H struct {
 	Addr    string
 	APIKey  string
 	Client  *http.Client
+	bin     string
 	cmd     *exec.Cmd
 	logs    *bytes.Buffer
 	logMu   sync.Mutex
@@ -159,32 +170,13 @@ func Start(t *testing.T, opts Options) *H {
 		Addr:    addr,
 		APIKey:  DefaultAPIKey,
 		Client:  &http.Client{Timeout: 5 * time.Second},
+		bin:     bin,
 		logs:    new(bytes.Buffer),
 		opts:    opts,
 	}
 
-	body := renderConfig(h, opts)
-
-	if err := os.WriteFile(h.Config, []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(h.Config, []byte(renderConfig(h, opts)), 0o600); err != nil {
 		t.Fatal(err)
-	}
-
-	cmd := exec.Command(bin, "-c", h.Config)
-	cmd.Dir = dir
-	cmd.Env = []string{
-		"HOME=" + dir,
-		"PATH=" + os.Getenv("PATH"),
-		"TMPDIR=" + dir,
-		"USER=" + os.Getenv("USER"),
-		"LANG=C",
-	}
-	prepareCmd(cmd)
-	cmd.Stdout = &logWriter{h: h}
-	cmd.Stderr = &logWriter{h: h}
-	h.cmd = cmd
-
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start unpackerr: %v", err)
 	}
 
 	t.Cleanup(func() {
@@ -197,11 +189,58 @@ func Start(t *testing.T, opts Options) *H {
 		}
 	})
 
+	h.launch(t)
+
+	return h
+}
+
+func (h *H) launch(t *testing.T) {
+	t.Helper()
+
+	cmd := exec.Command(h.bin, "-c", h.Config)
+	cmd.Dir = h.Dir
+	cmd.Env = []string{
+		"HOME=" + h.Dir,
+		"PATH=" + os.Getenv("PATH"),
+		"TMPDIR=" + h.Dir,
+		"USER=" + os.Getenv("USER"),
+		"LANG=C",
+	}
+	prepareCmd(cmd)
+	cmd.Stdout = &logWriter{h: h}
+	cmd.Stderr = &logWriter{h: h}
+	h.cmd = cmd
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start unpackerr: %v", err)
+	}
+
 	if err := h.Ready(ReadyTimeout); err != nil {
 		t.Fatalf("unpackerr not ready: %v\n%s", err, h.Logs())
 	}
+}
 
-	return h
+// WriteConfig replaces unpackerr.conf. Call Restart to pick up folder/Starr changes.
+func (h *H) WriteConfig(t *testing.T, opts Options) {
+	t.Helper()
+
+	opts = defaultOptions(opts)
+	opts.Binary = h.opts.Binary
+	h.opts = opts
+
+	if err := os.WriteFile(h.Config, []byte(renderConfig(h, opts)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Restart stops unpackerr and starts it again with the same config directory
+// so history JSONL can restore the live queue.
+func (h *H) Restart(t *testing.T) {
+	t.Helper()
+
+	h.Stop()
+	time.Sleep(150 * time.Millisecond)
+	h.launch(t)
 }
 
 // Stop sends SIGTERM to the process group, then SIGKILL.
@@ -262,6 +301,43 @@ func (h *H) get(path string) (*http.Response, error) {
 	return h.Client.Do(req)
 }
 
+func (h *H) post(path, body string) ([]byte, int, error) {
+	req, err := http.NewRequest(http.MethodPost, h.BaseURL()+path, strings.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	req.Header.Set("X-Api-Key", h.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := h.Client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	payload, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, res.StatusCode, err
+	}
+
+	return payload, res.StatusCode, nil
+}
+
+// Retry POSTs /api/queue/retry for the queue row id (usually the path).
+func (h *H) Retry(t *testing.T, id string) {
+	t.Helper()
+
+	body, code, err := h.post("/api/queue/retry", fmt.Sprintf(`{"id":%q}`, id))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if code != http.StatusOK {
+		t.Fatalf("retry %s: status %d %s", id, code, body)
+	}
+}
+
 // Ready polls GET /api/system until it returns 200.
 func (h *H) Ready(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
@@ -290,11 +366,16 @@ func (h *H) Ready(timeout time.Duration) error {
 
 // QueueItem is GET /api/queue.
 type QueueItem struct {
-	ID     string `json:"id"`
-	App    string `json:"app"`
-	Path   string `json:"path"`
-	Status string `json:"status"`
-	Error  string `json:"error"`
+	ID      string    `json:"id"`
+	App     string    `json:"app"`
+	Path    string    `json:"path"`
+	Status  string    `json:"status"`
+	Error   string    `json:"error"`
+	Note    string    `json:"note"`
+	Event   string    `json:"event"`
+	DueKind string    `json:"dueKind"`
+	Due     time.Time `json:"due"`
+	Archive string    `json:"archive"`
 }
 
 // HistoryRecord is GET /api/history.
@@ -354,6 +435,45 @@ func (h *H) History() ([]HistoryRecord, error) {
 	}
 
 	return items, nil
+}
+
+// Stats is GET /api/stats.
+type Stats struct {
+	StarrQueues []StarrQueueStat `json:"starrQueues"`
+}
+
+// StarrQueueStat is one Starr instance's last activity-queue poll.
+type StarrQueueStat struct {
+	App       string    `json:"app"`
+	Name      string    `json:"name"`
+	URL       string    `json:"url"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	Error     string    `json:"error"`
+}
+
+// Stats returns process counters including Starr poll timestamps.
+func (h *H) Stats() (*Stats, error) {
+	res, err := h.get("/api/stats")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("stats status %d: %s", res.StatusCode, body)
+	}
+
+	var stats Stats
+	if err := json.Unmarshal(body, &stats); err != nil {
+		return nil, fmt.Errorf("stats json: %w (%s)", err, body)
+	}
+
+	return &stats, nil
 }
 
 func matchID(id, want string) bool {
@@ -428,6 +548,47 @@ func (h *H) WaitHistory(t *testing.T, want, status string, timeout time.Duration
 	return HistoryRecord{}
 }
 
+// WaitLog waits until stdout/stderr contains needle.
+func (h *H) WaitLog(t *testing.T, needle string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(h.Logs(), needle) {
+			return
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timeout waiting for log %q:\n%s", needle, h.Logs())
+}
+
+// WaitQueueGone waits until a matching row is absent. Unlike AssertNeverQueue,
+// a row that is present and then dropped is success.
+func (h *H) WaitQueueGone(t *testing.T, want string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	var last QueueItem
+
+	for time.Now().Before(deadline) {
+		item, ok, err := h.FindQueue(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !ok {
+			return
+		}
+
+		last = item
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("timeout waiting for queue %q to leave; last=%+v", want, last)
+}
+
 // AssertNeverQueue waits timeout and fails if a matching row appears.
 func (h *H) AssertNeverQueue(t *testing.T, want string, timeout time.Duration) {
 	t.Helper()
@@ -470,6 +631,53 @@ func (h *H) AssertStatusNot(t *testing.T, want, status string, timeout time.Dura
 		for _, rec := range hist {
 			if (matchID(rec.ID, want) || matchID(rec.Path, want)) && rec.Status == status {
 				t.Fatalf("did not expect history %q %s: %+v", want, status, rec)
+			}
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// WaitQueueFunc waits until a matching queue row satisfies ok.
+func (h *H) WaitQueueFunc(t *testing.T, want string, timeout time.Duration, ok func(QueueItem) bool) QueueItem {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	var last []QueueItem
+
+	for time.Now().Before(deadline) {
+		items, err := h.Queue()
+		if err == nil {
+			last = items
+			for _, item := range items {
+				if (matchID(item.ID, want) || matchID(item.Path, want)) && ok(item) {
+					return item
+				}
+			}
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	t.Fatalf("timeout waiting for queue %q; last=%+v", want, last)
+
+	return QueueItem{}
+}
+
+// AssertNeverHistory waits timeout and fails if a matching history row appears.
+func (h *H) AssertNeverHistory(t *testing.T, want string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		hist, err := h.History()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, rec := range hist {
+			if matchID(rec.ID, want) || matchID(rec.Path, want) {
+				t.Fatalf("did not expect history %q: %+v", want, rec)
 			}
 		}
 

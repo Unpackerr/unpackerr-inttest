@@ -24,14 +24,15 @@ go_test  →  harness  →  fake Starr  (GET /api/v3/queue or /api/v1/queue)
 
 ```bash
 make test-unit                          # faker/fixture/harness unit tests
-make test                               # go test -tags=integration -timeout 3m ./test/...
+make test                               # go test -tags=integration -timeout 5m ./test/...
 UNPACKERR_BIN=/usr/local/bin/unpackerr make test
 ```
 
 Timers in the generated TOML are short (`interval` / `start_delay` around
-200ms–1s, folder poll 200ms). Current Unpackerr still floors Starr
-`interval` and `start_delay` at 15s, so extract assertions wait up to a
-minute.
+200ms–1s). Folder poll is off (`interval = "0s"`) unless a test sets it.
+Current Unpackerr still floors Starr `interval` and `start_delay` at 15s, so
+extract assertions wait up to a minute. Restart tests reuse the same config
+dir so `unpackerr.history.jsonl` can restore the live queue.
 
 ## Play along (watch the UI)
 
@@ -97,7 +98,8 @@ and inject queue rows:
 
 - `internal/starrfake` — in-memory queue, pagination, `X-Api-Key`, four-app hub
 - `internal/fixtures` — NFO/txt + urandom payloads; rar/zip/7z at test start
-- `internal/harness` — temp dir, TOML, exec unpackerr, poll `/api/queue` and `/api/history`
+- `internal/harness` — named `[folder.*]` / `[sonarr.*]` TOML, restart, `/api/queue` retry
+- `internal/httpcap` — records webhook JSON (`unpackerr_eventtype`, `data`, titles)
 - `internal/write` — slow chunked writer for folder `start_delay`
 - `internal/inject` — CLI that stages patterns and POSTs `/debug/add`
 - `cmd/faker` — long-running fake Starr (`/{app}/api/...`)

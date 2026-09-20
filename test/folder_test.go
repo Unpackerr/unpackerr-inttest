@@ -252,7 +252,8 @@ func TestFolderR00SkippedWhenRarExists(t *testing.T) {
 	copyFile(t, staged, filepath.Join(watch, "show.rar"))
 	copyFile(t, staged, filepath.Join(watch, "show.r00"))
 	h.WaitQueue(t, filepath.Join(watch, "show.rar"), "extracted", harness.ExtractTimeout)
-	h.AssertNeverQueue(t, filepath.Join(watch, "show.r00"), 2*time.Second)
+	h.WaitQueue(t, filepath.Join(watch, "show.r00"), "extractednothing", harness.ExtractTimeout)
+	h.AssertStatusNot(t, filepath.Join(watch, "show.r00"), "extracted", 2*time.Second)
 
 	if !strings.Contains(h.Logs(), "rar file exists") {
 		t.Fatalf("expected r00 skip log, got:\n%s", h.Logs())
@@ -270,6 +271,22 @@ func TestFolderExcludePaths(t *testing.T) {
 	skip := filepath.Join(watch, "skip")
 	okDir := filepath.Join(watch, "ok")
 
+	src := fixtures.DirWithPayload(t, root, "ex-src")
+	hidden := filepath.Join(root, "hidden.zip")
+	okZip := filepath.Join(root, "show.zip")
+	fixtures.ZIP(t, hidden, src, "")
+	fixtures.ZIP(t, okZip, src, "")
+
+	if err := os.MkdirAll(watch, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	h := startFolder(t, harness.Folder{
+		Path:         watch,
+		ExcludePaths: []string{"skip"},
+		DeleteAfter:  0,
+	}, nil)
+
 	if err := os.MkdirAll(skip, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -277,18 +294,6 @@ func TestFolderExcludePaths(t *testing.T) {
 	if err := os.MkdirAll(okDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-
-	src := fixtures.DirWithPayload(t, root, "ex-src")
-	hidden := filepath.Join(root, "hidden.zip")
-	okZip := filepath.Join(root, "show.zip")
-	fixtures.ZIP(t, hidden, src, "")
-	fixtures.ZIP(t, okZip, src, "")
-
-	h := startFolder(t, harness.Folder{
-		Path:         watch,
-		ExcludePaths: []string{"skip"},
-		DeleteAfter:  0,
-	}, nil)
 	copyFile(t, hidden, filepath.Join(skip, "hidden.zip"))
 	copyFile(t, okZip, filepath.Join(okDir, "show.zip"))
 	h.WaitQueue(t, okDir, "extracted", harness.ExtractTimeout)
