@@ -174,17 +174,6 @@ func TestFolderSkipEmpty(t *testing.T) {
 
 	deadline := time.Now().Add(harness.ExtractTimeout)
 	for time.Now().Before(deadline) {
-		hist, err := h.History()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, rec := range hist {
-			if strings.Contains(rec.ID, item) || strings.Contains(rec.Path, item) {
-				t.Fatalf("skip_empty wrote history: %+v", rec)
-			}
-		}
-
 		row, ok, err := h.FindQueue(item)
 		if err != nil {
 			t.Fatal(err)
@@ -195,6 +184,7 @@ func TestFolderSkipEmpty(t *testing.T) {
 		}
 
 		if !ok && strings.Contains(h.Logs(), "Skipping empty folder") {
+			h.AssertNeverHistory(t, item, harness.SkipTimeout)
 			return
 		}
 

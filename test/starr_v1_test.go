@@ -62,6 +62,9 @@ func TestStarrWaitingNotRestoredAfterDrop(t *testing.T) {
 		t.Fatal("drop")
 	}
 
+	// Stop Starr before restart so a wrongly restored WAITING row cannot be
+	// deleted by the first poll (missing from the queue looks like imported).
+	fake.Close()
 	h.Restart(t)
 	h.AssertNeverQueue(t, title, harness.SkipTimeout)
 }
