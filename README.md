@@ -107,5 +107,6 @@ and inject queue rows:
 - `test/` — `//go:build integration`
 
 Do not commit binary archives. GitHub Actions installs `rar` / `p7zip-full` /
-`zip`, checks out Unpackerr (`UNPACKERR_REF`, default `main`), builds it, and
-runs the integration tag.
+`zip`, checks out Unpackerr (dispatch `unpackerr_ref`, then `UNPACKERR_REF`,
+then `main`), builds it, and runs the integration tag. A manual run accepts a
+branch, tag, or commit SHA.

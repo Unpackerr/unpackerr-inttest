@@ -1,5 +1,11 @@
 name: test-and-lint
 on:
+  workflow_dispatch:
+    inputs:
+      unpackerr_ref:
+        description: Unpackerr branch, tag, or commit SHA (blank uses UNPACKERR_REF, then main)
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -44,7 +50,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Unpackerr/unpackerr
-          ref: ${{ vars.UNPACKERR_REF || 'main' }}
+          ref: ${{ inputs.unpackerr_ref || vars.UNPACKERR_REF || 'main' }}
           path: unpackerr-src
       - name: Build unpackerr
         run: go build -o unpackerr .
