@@ -108,5 +108,5 @@ and inject queue rows:
 
 Do not commit binary archives. GitHub Actions installs `rar` / `p7zip-full` /
 `zip`, checks out Unpackerr (dispatch `unpackerr_ref`, then `UNPACKERR_REF`,
-then `main`), builds it, and runs the integration tag. A manual run accepts a
-branch, tag, or commit SHA.
+then `main`), installs the Go version from that checkout, builds it, and runs
+the integration tag. A manual run accepts a branch, tag, or commit SHA.
