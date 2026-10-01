@@ -1,6 +1,8 @@
 package fixtures
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +11,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+)
+
+const (
+	// ZipBombName is the single member in the ratio fixture.
+	ZipBombName = "bomb.bin"
+	// ZipBombBytes is that member's uncompressed size. Deflate of zeros makes
+	// the archive tiny, so uncompressed/archive sits far above Starr's MaxRatio
+	// (7.5, and the previous cap of 5). xtractr rejects the member from the zip
+	// headers before writing it. This size is what a missed cap may still write.
+	ZipBombBytes = 1 << 20
+	// ZipBombMinRatio is the lowest uncompressed/archive ratio the fixture may have.
+	ZipBombMinRatio = 20
+	zipBombMaxBytes = 8 << 20
 )
 
 // Require skips the test when any named tool is missing from PATH.
@@ -165,6 +180,55 @@ func WriteZIP(dest, srcDir, password string, compress bool) error {
 	args = append(args, dest, ".")
 
 	return Run(srcDir, "zip", args...)
+}
+
+// WriteZipBomb writes a deflated zip of zeros. uncompressed must be in
+// 1..zipBombMaxBytes so a failed cap cannot fill the disk.
+func WriteZipBomb(dest string, uncompressed int) error {
+	if uncompressed <= 0 || uncompressed > zipBombMaxBytes {
+		return fmt.Errorf("zip bomb size %d outside 1..%d", uncompressed, zipBombMaxBytes)
+	}
+
+	dest, err := AbsDest(dest)
+	if err != nil {
+		return err
+	}
+
+	out, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("create zip bomb: %w", err)
+	}
+
+	zw := zip.NewWriter(out)
+	w, err := zw.CreateHeader(&zip.FileHeader{
+		Name:   ZipBombName,
+		Method: zip.Deflate,
+	})
+	if err != nil {
+		_ = zw.Close()
+		_ = out.Close()
+
+		return fmt.Errorf("zip bomb header: %w", err)
+	}
+
+	if _, err = io.Copy(w, bytes.NewReader(make([]byte, uncompressed))); err != nil {
+		_ = zw.Close()
+		_ = out.Close()
+
+		return fmt.Errorf("zip bomb payload: %w", err)
+	}
+
+	if err = zw.Close(); err != nil {
+		_ = out.Close()
+
+		return fmt.Errorf("close zip bomb: %w", err)
+	}
+
+	if err = out.Close(); err != nil {
+		return fmt.Errorf("close zip bomb file: %w", err)
+	}
+
+	return nil
 }
 
 // WriteSevenZip archives srcDir into dest (.7z).

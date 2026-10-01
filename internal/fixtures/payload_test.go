@@ -54,3 +54,26 @@ func TestWalkReadBaseMissingRoot(t *testing.T) {
 		t.Fatal("missing root should return an error")
 	}
 }
+
+func TestZipBombCompressesPastStarrCap(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "bomb.zip")
+	if err := fixtures.WriteZipBomb(dest, fixtures.ZipBombBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ratio := float64(fixtures.ZipBombBytes) / float64(info.Size())
+	if ratio < fixtures.ZipBombMinRatio {
+		t.Fatalf("ratio %.2f archive %d", ratio, info.Size())
+	}
+
+	if err := fixtures.WriteZipBomb(dest, fixtures.ZipBombBytes*16); err == nil {
+		t.Fatal("expected the size ceiling to reject a larger bomb")
+	}
+}
