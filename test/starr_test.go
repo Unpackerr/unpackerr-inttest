@@ -354,8 +354,8 @@ func TestStarrRARinZIP(t *testing.T) {
 }
 
 // TestStarrSceneNestedSubsExtracts is issue 796: a movie archive plus a subs
-// rar that stores an idx and a nested rar. Counting that nested rar made the
-// ratio look over 5 and failed the whole item, so the movie never imported.
+// rar that stores an idx and a nested rar. Counting that nested rar pushes the
+// ratio over 7.5 and would fail the whole item, so the movie would not import.
 func TestStarrSceneNestedSubsExtracts(t *testing.T) {
 	t.Parallel()
 

@@ -17,17 +17,18 @@ const (
 	// SceneSubName is the file inside the nested subs rar.
 	SceneSubName = "sub.bin"
 	// SceneSubBytes is the uncompressed subtitle payload.
-	// Issue 796's .sub was 8,957,952 bytes inside a 1,845,399 byte rar (4.85x).
-	// This is the same ratio at a size the test can build quickly.
+	// Small enough to build quickly. The nested rar's ratio is chosen so the
+	// final output sits under sceneCap and counting the nested rar goes over it.
 	SceneSubBytes     = 2_000_000
-	sceneNestedTarget = 4.85
-	sceneNestedMin    = 4.70
-	sceneNestedMax    = 4.98
+	sceneCap          = 7.5
+	sceneNestedTarget = 7.15
+	sceneNestedMin    = 6.95
+	sceneNestedMax    = 7.35
 )
 
 // SceneRatios is the issue 796 accounting for one built subs archive.
-// True is (.idx + .sub) / subs.rar. Inflated also counts the nested rar,
-// which is what failed the old MaxRatio of 5.
+// True is (.idx + .sub) / subs.rar. Inflated also counts the nested rar.
+// sceneCap is the Starr MaxRatio unstable ships (7.5).
 type SceneRatios struct {
 	True     float64
 	Inflated float64
@@ -35,9 +36,9 @@ type SceneRatios struct {
 }
 
 // WriteIssue796 builds a scene download: a movie rar plus Subs/show.subs.rar.
-// The subs rar stores a small idx and a nested rar. The nested rar expands
-// about 4.85x. Final output stays under 5x the subs rar; counting the nested
-// rar as well goes over 5. https://github.com/Unpackerr/unpackerr/issues/796
+// The subs rar stores a small idx and a nested rar. Final output stays under
+// 7.5x the subs rar; counting the nested rar as well goes over 7.5.
+// https://github.com/Unpackerr/unpackerr/issues/796
 func WriteIssue796(t *testing.T, download string) SceneRatios {
 	t.Helper()
 	Require(t, "rar")
@@ -62,9 +63,10 @@ func WriteIssue796(t *testing.T, download string) SceneRatios {
 		t.Fatal(err)
 	}
 
-	if ratios.True >= 5 || ratios.Inflated <= 5 || ratios.Nested < sceneNestedMin || ratios.Nested > sceneNestedMax {
-		t.Fatalf("scene ratios true=%.3f inflated=%.3f nested=%.3f, want true<5 inflated>5 nested in [%.2f,%.2f]",
-			ratios.True, ratios.Inflated, ratios.Nested, sceneNestedMin, sceneNestedMax)
+	if ratios.True >= sceneCap || ratios.Inflated <= sceneCap ||
+		ratios.Nested < sceneNestedMin || ratios.Nested > sceneNestedMax {
+		t.Fatalf("scene ratios true=%.3f inflated=%.3f nested=%.3f, want true<%g inflated>%g nested in [%.2f,%.2f]",
+			ratios.True, ratios.Inflated, ratios.Nested, sceneCap, sceneCap, sceneNestedMin, sceneNestedMax)
 	}
 
 	return ratios

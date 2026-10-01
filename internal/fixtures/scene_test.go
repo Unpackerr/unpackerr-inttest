@@ -6,7 +6,7 @@ import (
 	"github.com/Unpackerr/unpackerr-inttest/internal/fixtures"
 )
 
-func TestIssue796RatiosStraddleFive(t *testing.T) {
+func TestIssue796RatiosStraddleCap(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
