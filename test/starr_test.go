@@ -5,6 +5,7 @@ package test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -351,6 +352,68 @@ func TestStarrRARinZIP(t *testing.T) {
 	h := startStarr(t, fake, nil)
 	h.WaitQueue(t, title, "extracted", harness.ExtractTimeout)
 	assertExtractedMarker(t, out)
+}
+
+func TestStarrZipBombStopsAtRatio(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t, starrfake.AppSonarr)
+	out, _ := fixtures.DownloadSet(t, t.TempDir(), "BOMB")
+	dest := filepath.Join(out, "show.zip")
+
+	if err := fixtures.WriteZipBomb(dest, fixtures.ZipBombBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ratio := float64(fixtures.ZipBombBytes) / float64(info.Size())
+	if ratio < fixtures.ZipBombMinRatio {
+		t.Fatalf("fixture ratio %.2f is below %d (archive %d bytes)", ratio, fixtures.ZipBombMinRatio, info.Size())
+	}
+
+	title := fixtures.SceneName("BOMB")
+	fake.Add(starrfake.Record{
+		Title:      title,
+		Status:     starrfake.StatusCompleted,
+		OutputPath: out,
+	})
+
+	h := startStarr(t, fake, nil)
+	item := h.WaitQueue(t, title, "extractfailed", harness.ExtractTimeout)
+
+	if !strings.Contains(item.Error, "maximum compression ratio") {
+		t.Fatalf("error %q", item.Error)
+	}
+
+	assertFileAbsent(t, filepath.Dir(out), fixtures.ZipBombName)
+}
+
+func assertFileAbsent(t *testing.T, root, name string) {
+	t.Helper()
+
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !d.IsDir() && d.Name() == name {
+			info, statErr := d.Info()
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+
+			t.Fatalf("wrote %s (%d bytes)", path, info.Size())
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestStarrSceneNestedSubsExtracts is issue 796: a movie archive plus a subs
