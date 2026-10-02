@@ -352,3 +352,43 @@ func TestStarrRARinZIP(t *testing.T) {
 	h.WaitQueue(t, title, "extracted", harness.ExtractTimeout)
 	assertExtractedMarker(t, out)
 }
+
+// TestStarrSceneNestedSubsExtracts is issue 796: a movie archive plus a subs
+// rar that stores an idx and a nested rar. Counting that nested rar made the
+// ratio look over 5 and failed the whole item, so the movie never imported.
+func TestStarrSceneNestedSubsExtracts(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t, starrfake.AppRadarr)
+	out := filepath.Join(t.TempDir(), fixtures.SceneName("DEPTH"))
+
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ratios := fixtures.WriteIssue796(t, out)
+	t.Logf("true=%.3f inflated=%.3f nested=%.3f", ratios.True, ratios.Inflated, ratios.Nested)
+
+	title := fixtures.SceneName("DEPTH")
+	fake.Add(starrfake.Record{
+		Title:      title,
+		Status:     starrfake.StatusCompleted,
+		OutputPath: out,
+	})
+
+	h := startStarr(t, fake, nil)
+	h.WaitQueue(t, title, "extracted", harness.ExtractTimeout)
+
+	got, ok, err := fixtures.WalkReadBase(filepath.Dir(out), fixtures.SceneFeatureName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !ok || got != fixtures.SceneFeature {
+		t.Fatalf("feature %q ok=%v", got, ok)
+	}
+
+	if !fixtures.WalkHasBase(filepath.Dir(out), fixtures.SceneSubName) {
+		t.Fatalf("extracted %s not found under %s", fixtures.SceneSubName, out)
+	}
+}
