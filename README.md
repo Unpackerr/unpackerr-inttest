@@ -92,7 +92,7 @@ and inject queue rows:
    Built-ins: `rar`, `zip`, `7z`, `recursive` (zip-in-zip), `nests` (three
    inner zips), `subs` (archive in `Season.01/`), `depth` (archives at
    different folder depths), `volumes`, `r00`, `password` (folder name
-   `{{hunter2}}`), `empty`, `rarzip`, `syncthing` (`.tmp` sibling).
+   `{{hunter2}}`), `empty`, `rarzip`, `syncthing` (`.syncthing.show.rar.tmp` sibling).
 
 ## Layout
 

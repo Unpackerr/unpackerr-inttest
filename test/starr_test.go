@@ -269,7 +269,8 @@ func TestStarrSyncthingTmp(t *testing.T) {
 	out, src := fixtures.DownloadSet(t, t.TempDir(), "SYNC")
 	fixtures.RAR(t, filepath.Join(out, "show.rar"), src, fixtures.RAROptions{})
 
-	tmp := filepath.Join(out, "file.tmp")
+	// Syncthing's own temp name. A plain file.tmp is download content.
+	tmp := filepath.Join(out, ".syncthing.show.rar.tmp")
 	if err := os.WriteFile(tmp, []byte("syncing"), 0o644); err != nil {
 		t.Fatal(err)
 	}

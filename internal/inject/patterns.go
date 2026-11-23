@@ -243,7 +243,7 @@ func stageSyncthing(outputPath, src string, _ int, compress bool) error {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(outputPath, "file.tmp"), []byte("syncing"), 0o644)
+	return os.WriteFile(filepath.Join(outputPath, ".syncthing.show.rar.tmp"), []byte("syncing"), 0o644)
 }
 
 func volumeFlag(bytes int) string {
